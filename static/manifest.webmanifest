@@ -1,0 +1,32 @@
+{
+  "name": "TABLE LAY 크리스마스 코스 컨트롤",
+  "short_name": "TABLE LAY",
+  "description": "10개 테이블의 코스 진행 및 남은 요리 수량 관리",
+  "lang": "ko",
+  "id": "../",
+  "start_url": "../",
+  "scope": "../",
+  "display": "standalone",
+  "background_color": "#111315",
+  "theme_color": "#111315",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

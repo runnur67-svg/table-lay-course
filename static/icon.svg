@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+<rect width="192" height="192" rx="38" fill="#15191c"/>
+<path d="M31 56h130" stroke="#939c9d" stroke-width="3" opacity=".35"/>
+<text x="33" y="123" font-family="Arial, Helvetica, sans-serif" font-size="77" font-weight="700" fill="#f4f2eb" letter-spacing="-5">TL</text>
+<circle cx="150" cy="117" r="8" fill="#b6a78e"/>
+</svg>

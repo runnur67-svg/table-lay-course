@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101215">
+  <meta name="description" content="TABLE LAY 크리스마스 코스 진행 컨트롤 보드 · 오프라인 저장">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Table Lay">
+  <link rel="apple-touch-icon" href="./static/icon-180.png">
+  <link rel="manifest" href="./static/manifest.webmanifest">
+  <link rel="icon" href="./static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./static/style.css">
+  <title>TABLE LAY | 코스 컨트롤</title>
+</head>
+<body>
+  <div id="app" class="app-shell" hidden>
+    <header class="topbar">
+      <div class="identity">
+        <div class="brand-mark">TL<span class="brand-mark-dot">.</span></div>
+        <div class="brand-lines"><div class="brand-name">TABLE LAY</div><div class="brand-desc">CHRISTMAS COURSE CONTROL</div></div>
+      </div>
+      <label class="round-picker">
+        <span class="sr-only">운영 회차</span>
+        <select id="round-picker"><option value="24-l1">12월 24일 · 런치 1부</option></select>
+      </label>
+      <div class="header-right">
+        <div class="head-counter"><span>진행 중</span><strong id="active-count">0</strong></div>
+        <div class="head-counter"><span>서빙 지연</span><strong id="late-count">0</strong></div>
+        <div class="clock-wrap"><time id="clock">--:--</time><span id="planned-start">시작 시간 미설정</span></div>
+        <button id="practice-toggle" class="header-btn practice-trigger" type="button">연습 모드</button>
+        <button id="timetable-open" class="header-btn timetable-trigger" type="button">▦ <span>타임테이블</span></button>
+        <button id="settings-open" class="header-btn settings-btn" type="button" aria-label="회차 및 코스 설정">⚙ <span>설정</span></button>
+      </div>
+    </header>
+
+    <div id="practice-bar" class="practice-bar" hidden>
+      <span class="practice-indicator">● 연습 모드 — 실제 저장 데이터에 영향 없음</span>
+      <div class="practice-tools">
+        <button id="demo-minus" type="button">−5분</button>
+        <strong id="demo-time">12:45</strong>
+        <button id="demo-plus" type="button">+5분</button>
+        <button id="demo-reset" type="button">연습 초기화</button>
+      </div>
+    </div>
+
+    <section class="quantity-bar" aria-label="앞으로 제공할 요리 수량">
+      <div class="quantity-title"><strong>남은 요리</strong><span id="quantity-grand">0개</span></div>
+      <div id="quantity-list" class="quantity-list" aria-live="polite"><span class="quantity-placeholder">등록된 테이블이 없습니다.</span></div>
+    </section>
+
+    <div class="board-heading">
+      <div><strong>TABLE STATUS</strong><span class="board-description" id="board-description">실제 매장 테이블 배치</span></div>
+      <div class="board-legend"><span><i class="dot ok"></i> 정상</span><span><i class="dot soon"></i> 서빙 임박</span><span><i class="dot late"></i> 지연</span></div>
+    </div>
+
+    <main class="floor" aria-label="테이블별 코스 진행 상태">
+      <div class="floor-wait-row"><div class="waiting-seat">대기 1</div><div class="waiting-seat">대기 2</div></div>
+      <div class="table-row" id="table-row-top" aria-label="10번부터 6번 테이블"></div>
+      <div class="table-row" id="table-row-bottom" aria-label="5번부터 1번 테이블"></div>
+    </main>
+
+    <footer class="footer-bar">
+      <div id="queue-message" class="queue-message">테이블별 서빙 진행 상황을 확인합니다.</div>
+      <div class="footer-actions"><span id="connection-status" class="connection-status" role="status" aria-live="polite">● 이 기기에 저장</span><button id="guide-button" type="button" class="footer-button">사용법</button></div>
+    </footer>
+  </div>
+
+  <div class="auth-screen" id="auth-screen">
+    <div class="auth-panel">
+      <div class="auth-monogram">TL<span>.</span></div>
+      <h1 id="auth-heading">TABLE LAY</h1>
+      <p id="auth-subtitle">태블릿의 오프라인 저장소를 준비 중입니다.</p>
+      <p class="auth-footnote">모든 운영 정보는 이 기기의 브라우저에만 저장됩니다.</p>
+      <button id="storage-retry" class="secondary-action" type="button" hidden>다시 시도</button>
+    </div>
+  </div>
+
+  <dialog id="table-dialog" class="modal table-modal">
+    <div class="modal-header"><div><span class="modal-eyebrow">GUEST DETAILS</span><h2 id="table-modal-title">TABLE 01</h2></div><button type="button" class="close-btn" data-close="table-dialog" aria-label="닫기">×</button></div>
+    <form id="table-form" class="modal-body">
+      <label class="registration-row"><input type="checkbox" id="table-assigned" checked><span><strong>이번 회차에 테이블 등록</strong><small>등록된 테이블의 앞으로 나갈 요리를 총 수량에 포함합니다.</small></span></label>
+      <div class="form-grid">
+        <div><label class="field-label">인원수</label><div class="stepper"><button type="button" id="party-minus" aria-label="인원 줄이기">−</button><output id="party-value">2명</output><button type="button" id="party-plus" aria-label="인원 늘리기">+</button></div></div>
+        <div><label for="allergy-status" class="field-label">알레르기 확인 상태</label><select id="allergy-status"><option value="unknown">미확인</option><option value="none">없음 확인</option><option value="yes">알레르기 있음</option></select></div>
+      </div>
+      <label for="allergy-note" class="field-label">알레르기 상세 내용</label>
+      <input type="text" id="allergy-note" maxlength="100" placeholder="예: 갑각류, 견과류, 우유">
+      <div id="table-next-explanation" class="modal-help"></div>
+      <div class="modal-actions"><button id="table-clear" type="button" class="danger-outline">테이블 비우기</button><div class="modal-spacer"></div><button id="table-undo" type="button" class="secondary-action">↶ 이전 코스</button><button id="table-save" type="submit" class="primary-action">저장</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="modal config-modal">
+    <div class="modal-header"><div><span class="modal-eyebrow">COURSE / SESSION EDITOR</span><h2>코스 구성 · 회차별 시간</h2></div><button type="button" class="close-btn" data-close="settings-dialog" aria-label="닫기">×</button></div>
+    <div class="modal-body settings-body">
+      <div class="settings-switch" role="tablist" aria-label="설정 종류">
+        <button id="menu-tab" type="button" role="tab" aria-selected="true" aria-controls="menu-config-pane" class="is-active">① 런치·디너 코스 구성</button>
+        <button id="time-tab" type="button" role="tab" aria-selected="false" aria-controls="time-config-pane">② 회차별 서빙 시간</button>
+      </div>
+      <section id="menu-config-pane" class="settings-pane" role="tabpanel" aria-labelledby="menu-tab">
+        <div class="settings-pane-title"><div><strong>공통 코스 구성</strong><small>요리 이름과 수량 기준은 같은 식사 유형의 모든 회차에 공통 적용됩니다.</small></div><select id="settings-meal-picker" aria-label="코스 유형 선택"><option value="lunch">런치</option><option value="dinner">디너</option></select></div>
+        <div class="scope-note" id="menu-scope-note">런치 · 24일 런치 1부 / 25일 런치 1·2부</div>
+        <div id="course-editor" class="course-editor"></div>
+        <div class="pane-actions"><button type="button" id="course-add" class="secondary-action">+ 코스 추가</button><button type="button" id="save-menu" class="primary-action">공통 코스 구성 저장</button></div>
+        <small class="editor-notice">코스 수를 변경하면 각 회차에 기존 제공 시간을 최대한 유지하며, 추가 코스는 임시 간격으로 배치됩니다. 각 회차의 정확한 제공 시간은 오른쪽 탭에서 따로 조정하세요. 이미 진행 중인 회차가 있으면 코스 수 변경은 제한됩니다.</small>
+      </section>
+      <section id="time-config-pane" class="settings-pane" role="tabpanel" aria-labelledby="time-tab" hidden>
+        <div class="settings-pane-title"><div><strong>회차별 서빙 시간</strong><small>24일 런치와 25일 런치는 같은 요리를 사용하되 시작·서빙 시간은 각각 지정할 수 있습니다.</small></div><select id="time-round-picker" aria-label="시간을 설정할 회차"></select></div>
+        <div class="settings-top time-settings-top">
+          <div><label for="settings-start" class="field-label">해당 회차 시작 시각</label><input type="time" id="settings-start"><small>미정이면 비워둘 수 있습니다. 시간표에는 ‘미정’으로 표시됩니다.</small></div>
+          <div><label for="settings-duration" class="field-label">예정 종료 (시작 후 분)</label><input type="number" id="settings-duration" min="1" max="360" step="1" value="90"><small>예: 시작 12:00 / 종료 13:30 → 90분</small></div>
+        </div>
+        <div class="courses-header"><strong>코스별 서빙 시각</strong><small>시작 후 경과 분으로 입력 · 표에 실제 시각 자동 계산</small></div>
+        <div id="time-course-editor" class="course-editor time-course-editor"></div>
+        <div class="pane-actions"><button type="button" id="open-timetable-from-settings" class="secondary-action">이 회차 타임테이블 보기</button><button type="button" id="save-times" class="primary-action">이 회차 시간 저장</button></div>
+        <small class="editor-notice">회차별 시간은 다른 회차에 영향을 주지 않습니다. 이미 진행 중인 테이블도 수정된 경과 시간에 맞춰 다음 서빙 예정 시각이 즉시 다시 계산됩니다.</small>
+      </section>
+      <div class="settings-utilities"><button type="button" id="backup-button" class="secondary-action">전체 데이터 백업 (.json)</button><button type="button" id="restore-button" class="secondary-action">백업 복원 (.json)</button><input id="restore-file" type="file" accept="application/json,.json" hidden><button type="button" id="settings-reset" class="danger-outline">현재 운영 회차 초기화</button></div>
+      <div class="settings-bottom"><span class="local-data-notice">● IndexedDB 자동 저장 · 서버 불필요</span><small>백업 복원은 7개 회차의 모든 내용을 덮어씁니다. 중요 설정을 변경한 뒤에는 백업 파일을 보관하세요.</small></div>
+    </div>
+  </dialog>
+
+  <dialog id="timetable-dialog" class="modal timetable-modal">
+    <div class="modal-header"><div><span class="modal-eyebrow">SERVICE TIMETABLE</span><h2>회차별 타임테이블</h2></div><button type="button" class="close-btn" data-close="timetable-dialog" aria-label="닫기">×</button></div>
+    <div class="modal-body timetable-body">
+      <div class="timetable-tools"><label for="timetable-round-picker" class="field-label">공유할 회차</label><select id="timetable-round-picker"></select></div>
+      <div id="timetable-sheet" class="timetable-sheet" aria-label="해당 회차의 코스별 서빙 시간표"></div>
+      <div class="timetable-actions"><button id="timetable-copy" class="secondary-action" type="button">텍스트 복사</button><button id="timetable-image" class="primary-action" type="button">이미지 저장·공유</button><button id="timetable-print" class="secondary-action" type="button">인쇄 / PDF</button></div>
+      <small class="timetable-tip">공유용 표는 현재 저장된 설정으로 만들어집니다. 설정을 바꿨다면 먼저 저장해 주세요. 이미지 저장·공유는 기기 지원 여부에 따라 공유 메뉴 또는 PNG 저장을 사용합니다.</small>
+    </div>
+  </dialog>
+  <div id="print-sheet" aria-hidden="true"></div>
+
+  <dialog id="guide-dialog" class="modal guide-modal">
+    <div class="modal-header"><div><span class="modal-eyebrow">QUICK GUIDE</span><h2>사용 방법</h2></div><button type="button" class="close-btn" data-close="guide-dialog" aria-label="닫기">×</button></div>
+    <div class="modal-body guide-body">
+      <p>① 테이블 카드를 누르고 인원·알레르기를 등록합니다. 등록된 테이블은 착석 전이라도 남은 요리 총량에 포함됩니다.</p>
+      <p>② 손님 착석과 첫 요리 제공 시 <strong>첫 코스 시작</strong>을 누릅니다. 이후 요리를 제공할 때마다 <strong>서빙 완료</strong>를 누릅니다.</p>
+      <p>③ 상단의 <strong>남은 요리</strong>는 각 테이블의 아직 제공하지 않은 전체 코스 수량입니다. '지금'은 현재 서빙 시간이 된 수량입니다.</p>
+      <p>④ 테이블 카드의 노랑은 5분 이내, 빨강은 예정 시각 초과, 초록은 정상입니다. 알레르기는 별도 경고 문구로 표시됩니다.</p>
+      <p>⑤ <strong>설정 → 공통 코스 구성</strong>에서 런치/디너 요리를 편집하고, <strong>회차별 서빙 시간</strong>에서 7개 회차의 시작·코스 시간을 따로 지정합니다. 저장하면 현황판에 바로 적용됩니다.</p>
+      <p>⑥ 상단 <strong>타임테이블</strong>에서 7개 회차의 표를 열고 PNG 이미지로 저장·공유하거나 인쇄/PDF로 내보낼 수 있습니다. 모든 진행 정보는 이 태블릿의 IndexedDB에 자동 저장됩니다. 인터넷 연결이 없어도 설치 후 이용할 수 있으며, 설정의 <strong>전체 데이터 백업</strong>으로 JSON 파일을 보관하고 <strong>백업 복원</strong>으로 복구할 수 있습니다.</p>
+      <p><strong>중요:</strong> 브라우저 데이터 삭제, 앱 삭제 또는 기기 교체 시 데이터가 사라질 수 있습니다. GitHub Pages에는 고객 정보가 저장되지 않으며, 다른 기기로 자동 동기화되지 않습니다.</p>
+      <p><strong>연습 모드</strong>에서는 예시 데이터로 진행을 시험해 볼 수 있으며 실제 데이터는 변경되지 않습니다.</p>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./static/app.js" defer></script>
+</body>
+</html>

@@ -1,10 +1,11 @@
 /* TABLE LAY PWA — all assets are relative so GitHub Pages project URLs work. */
-const CACHE_NAME = 'tablelay-offline-v3-20261112-light';
+const CACHE_NAME = 'tablelay-offline-v5-20261114-sync';
 const APP_FILES = [
   './',
   './index.html',
-  './static/app-v3.js',
-  './static/style-v3.css',
+  './static/app-v5.js',
+  './static/sync-v5.js',
+  './static/style-v5.css',
   './static/manifest.webmanifest',
   './static/icon.svg',
   './static/icon-180.png',

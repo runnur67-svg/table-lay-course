@@ -1,5 +1,5 @@
 /* TABLE LAY PWA — all assets are relative so GitHub Pages project URLs work. */
-const CACHE_NAME = 'tablelay-offline-v5-20261126-board-taps';
+const CACHE_NAME = 'tablelay-offline-v5-20261126-instant-board';
 const APP_FILES = [
   './',
   './index.html',

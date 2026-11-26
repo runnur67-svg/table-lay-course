@@ -42,7 +42,7 @@ const doc={
  },
  body:new MockElement('body')
 };
-const globalStore={value:null,created:false};
+const globalStore={value:null,created:false,writeDelay:0,failWrite:false};
 function mockIDB() {
   return {
     open() {
@@ -66,7 +66,15 @@ function mockIDB() {
                   },
                   put(value) {
                     const copy = structuredClone(value);
-                    setTimeout(() => { globalStore.value = copy; tx.oncomplete?.(); }, 0);
+                    setTimeout(() => {
+                      if(globalStore.failWrite){
+                        tx.error=Error('mock storage failure');
+                        tx.onerror?.();
+                        return;
+                      }
+                      globalStore.value=copy;
+                      tx.oncomplete?.();
+                    },globalStore.writeDelay);
                     return {};
                   }
                 };
@@ -260,11 +268,17 @@ async function testV5(){
   }
   const first=buttonFor(1),second=buttonFor(2),third=buttonFor(3);
   const untouchedHeader=cardFor(3).querySelector('.card-header');
+  const revision=round().round.revision;
+  globalStore.writeDelay=120;
   const serveFirst=first.click();
   const repeatedTap=first.click();
   const seatSecond=second.click();
   assert.equal(cardFor(3).querySelector('.card-header'),untouchedHeader);
   const seatThird=third.click();
+  assert.equal(second.textContent,'코스 시작','second table responds before storage');
+  assert.equal(third.textContent,'코스 시작','third table responds before storage');
+  assert.equal(round().tables[1].seated,false);
+  assert.equal(round().tables[2].seated,false);
   await Promise.all([serveFirst,repeatedTap,seatSecond,seatThird]);
   assert.equal(table().step,2,'two taps for the same visible course advance once');
   for(const [number,button] of [[1,first],[2,second],[3,third]]){
@@ -272,7 +286,23 @@ async function testV5(){
   }
   assert.equal(round().tables[1].seated,true);
   assert.equal(round().tables[2].seated,true);
-  console.log('PASS: rapid taps on three tables save in order without skipping courses');
+  assert.equal(round().round.revision,revision+1,'three quick taps use one save');
+  globalStore.failWrite=true;
+  const failed=second.click();
+  assert.equal(second.textContent,'서빙 완료');
+  await failed;
+  assert.equal(second.textContent,'코스 시작','failed save restores the on-screen action');
+  assert.equal(round().tables[1].started_at,null);
+  globalStore.failWrite=false;
+  const startSecond=second.click();
+  await sleep(70);
+  const startThird=third.click();
+  assert.equal(third.textContent,'서빙 완료','touch responds while another write is in flight');
+  assert.equal(round().tables[2].started_at,null);
+  await Promise.all([startSecond,startThird]);
+  assert(round().tables[1].started_at>0);
+  assert(round().tables[2].started_at>0);
+  console.log('PASS: immediate table feedback, batched save, duplicate protection and rollback');
   console.log('PASS: v5 reservation names, badge, seating, course, IndexedDB, and JSON compatibility');
 }
 (v5?testV5():main()).catch(e=>{console.error('FAIL',e);process.exit(1)});

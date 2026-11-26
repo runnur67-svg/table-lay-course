@@ -52,8 +52,9 @@
     editingTable: 1,
     editParty: 2,
     busy: false,
-    boardActions: [],
-    flashedTable: null,
+    pendingTables: new Map(),
+    boardSaveTimer: null,
+    boardSaving: false,
     prevStatus: new Map(),
     toastTimer: null,
     lastMinute: null,
@@ -321,7 +322,7 @@
     serve.addEventListener('click',()=>{
       const phase=serve.dataset.phase;
       if(phase==='register'){openTable(number);return;}
-      return queueBoardAction(()=>serveCourse(number,phase));
+      return queueTableAdvance(number,phase);
     });
     foot.append(serve);
     article.append(main,foot);
@@ -387,7 +388,8 @@
     const lookup = new Map(data.tables.map((t) => [t.number, t]));
     const schedule=JSON.stringify([data.round.id,data.round.planned_start,data.round.courses]);
     for(const card of [...upper.children,...lower.children]){
-      const table=lookup.get(Number(card.dataset.table));
+      const number=Number(card.dataset.table);
+      const table=app.pendingTables.get(number)?.preview||lookup.get(number);
       const contents=schedule+JSON.stringify(table);
       if(cardContents.get(card)!==contents){
         renderTableCard(card,table);
@@ -398,14 +400,6 @@
         const remaining=countText(table);
         if(counter.textContent!==remaining)counter.textContent=remaining;
       }
-    }
-    if (app.flashedTable) {
-      const card = document.querySelector(`.table-card[data-table="${app.flashedTable}"]`);
-      if (card) {
-        card.classList.add('service-flash');
-        card.addEventListener('animationend', () => card.classList.remove('service-flash'), {once:true});
-      }
-      app.flashedTable = null;
     }
     app.prevStatus = new Map(data.tables.map((t) => [t.number, urgency(t)]));
   }
@@ -456,7 +450,8 @@
     if (!app.authorized || !snapshot()) return;
     $('clock').textContent = prettyTime(nowMs());
     const changed = [];
-    snapshot().tables.forEach(t => {
+    snapshot().tables.forEach(saved => {
+      const t=app.pendingTables.get(saved.number)?.preview||saved;
       const s = urgency(t), old = app.prevStatus.get(t.number);
       const card = document.querySelector(`.table-card[data-table="${t.number}"]`);
       if (card) {
@@ -506,7 +501,7 @@
   }
 
   async function changeMode(){
-    if(!app.authorized||app.busy||$('settings-dialog').open||$('table-dialog').open)return;
+    if(!app.authorized||app.busy||app.pendingTables.size||$('settings-dialog').open||$('table-dialog').open)return;
     if(app.mode==='live'){
       app.mode='demo';
       if(!app.demos.has(app.activeRound))app.demos.set(app.activeRound,makeDemo(app.live));
@@ -664,45 +659,66 @@
     $('sync-decisions').hidden=true;$('sync-uid').hidden=true;
     syncMessage('연동 해제됨 · 이 기기에만 저장');updateStatus();
   }
-  function queueBoardAction(run){
-    const round=app.activeRound, mode=app.mode;
-    if(!app.busy&&!app.remoteApplying)return run();
-    return new Promise(resolve=>{
-      app.boardActions.push(async ()=>{
-        try{
-          if(app.activeRound===round&&app.mode===mode)await run();
-        }finally{resolve();}
-      });
+  function advanceTable(table, pressedAt, startedAt) {
+    if(!table.seated)table.seated=true;
+    else if(!table.started_at)table.started_at=startedAt;
+    else table.step++;
+    table.updated_at=pressedAt;
+  }
+
+  function queueTableAdvance(number,phase) {
+    const table=snapshot()?.tables.find(t=>t.number===number);
+    if(app.pendingTables.has(number)||!table?.assigned||tablePhase(table)!==phase||table.step>=courseCount())return;
+    const pressedAt=Date.now()/1000, startedAt=nowMs()/1000;
+    const preview={...table};
+    advanceTable(preview,pressedAt,startedAt);
+    const saved=new Promise(resolve=>{
+      app.pendingTables.set(number,{number,phase,pressedAt,startedAt,preview,resolve});
     });
+    const card=document.querySelector(`.table-card[data-table="${number}"]`);
+    if(card){
+      renderTableCard(card,preview);
+      cardContents.delete(card);
+    }
+    if(app.boardSaveTimer===null){
+      app.boardSaveTimer=setTimeout(()=>{
+        app.boardSaveTimer=null;
+        drainBoardActions().catch(syncFailure);
+      },40);
+    }
+    return saved;
   }
 
   async function drainBoardActions(){
-    while(!app.busy&&!app.remoteApplying&&app.boardActions.length){
-      await app.boardActions.shift()();
+    if(app.busy||app.remoteApplying||app.boardSaving||app.boardSaveTimer!==null||!app.pendingTables.size)return;
+    const batch=[...app.pendingTables.values()];
+    const tables=snapshot().tables;
+    const changes=batch.map(action=>({action,table:tables.find(t=>t.number===action.number)}))
+      .filter(({action,table})=>table?.assigned&&tablePhase(table)===action.phase&&table.step<courseCount());
+    let result=null;
+    app.boardSaving=true;
+    try{
+      if(changes.length){
+        result=await mutate(null,null,()=>{
+          for(const {action,table} of changes)advanceTable(table,action.pressedAt,action.startedAt);
+        });
+      }
+      if(changes.length!==batch.length)toast('다른 기기에서 바뀐 테이블이 있습니다. 현재 단계를 확인해 주세요.',true);
+    }finally{
+      app.boardSaving=false;
+      for(const action of batch)app.pendingTables.delete(action.number);
+      renderBoard();
+      for(const action of batch)action.resolve(!!result&&changes.some(change=>change.action===action));
+      if(app.pendingTables.size)drainBoardActions().catch(syncFailure);
     }
   }
 
-  async function serveCourse(tableNumber,phase) {
-    const t=snapshot()?.tables.find(x=>x.number===tableNumber);
-    // Repeated taps for the same visible step must never advance an extra course.
-    if (!t?.assigned||tablePhase(t)!==phase||t.step>=courseCount()) return;
-    app.flashedTable=tableNumber;
-    const result=await mutate(null,null,()=>{
-      if(!t.seated)t.seated=true;
-      else if(!t.started_at)t.started_at=nowMs()/1000;
-      else t.step++;
-      t.updated_at=Date.now()/1000;
-    });
-    if (!result) app.flashedTable=null;
-  }
-
   async function seatAll(){
-    const n=snapshot().tables.filter(t=>t.assigned&&!t.seated).length;
-    if(!n){toast('착석 대기 중인 등록 테이블이 없습니다.');return;}
-    const result=await mutate(null,null,()=>snapshot().tables.forEach(t=>{
-      if(t.assigned&&!t.seated){t.seated=true;t.updated_at=Date.now()/1000;}
-    }));
-    if(result)toast(`${n}개 테이블 착석 완료 · 코스 시작은 각 테이블에서 누르세요.`);
+    const tables=snapshot().tables.filter(t=>t.assigned&&!t.seated&&!app.pendingTables.has(t.number));
+    if(!tables.length){toast('착석 대기 중인 등록 테이블이 없습니다.');return;}
+    const saved=await Promise.all(tables.map(t=>queueTableAdvance(t.number,tablePhase(t))));
+    const count=saved.filter(Boolean).length;
+    if(count)toast(`${count}개 테이블 착석 완료 · 코스 시작은 각 테이블에서 누르세요.`);
   }
   function syncGuestControls(){
     const host=$('guest-order-list');host.replaceChildren();
@@ -1116,7 +1132,7 @@
   }
   async function downloadBackup(){
     if(app.mode==='demo'){toast('실제 운영 모드에서 백업하세요.',true);return;}
-    if(app.busy){toast('저장 완료 후 백업하세요.',true);return;}
+    if(app.busy||app.pendingTables.size){toast('저장 완료 후 백업하세요.',true);return;}
     const content={format:FORMAT_NAME,version:FORMAT_VERSION,exported_at:new Date().toISOString(),data:validateStore(serialize())};
     const blob=new Blob([JSON.stringify(content,null,2)],{type:'application/json;charset=utf-8'});
     const name=`Table_Lay_backup_${new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}_${new Date().toLocaleTimeString('en-GB',{timeZone:'Asia/Seoul',hour12:false}).replaceAll(':','')}.json`;
@@ -1147,7 +1163,7 @@
     if(!file)return;
     if(app.mode==='demo'){toast('실제 운영 모드에서 복원하세요.',true);return;}
     if(app.syncActive){toast('연동 중 백업 복원은 금지됩니다. 두 기기 연동을 먼저 해제하세요.',true);return;}
-    if(app.busy){toast('현재 저장 작업이 끝난 후 시도하세요.',true);return;}
+    if(app.busy||app.pendingTables.size){toast('현재 저장 작업이 끝난 후 시도하세요.',true);return;}
     if(file.size>3*1024*1024){toast('백업 파일이 너무 큽니다.',true);return;}
     let validated;
     try{
@@ -1185,7 +1201,7 @@
     window.addEventListener('offline',()=>{if(app.syncActive)app.syncIssue='인터넷 연결이 끊어졌습니다.';updateStatus();});
     $('storage-retry').addEventListener('click',()=>{ $('storage-retry').hidden=true;start(); });
     $('round-picker').addEventListener('change',async e=>{
-      if(app.busy){e.target.value=app.activeRound;return;}
+      if(app.busy||app.pendingTables.size){e.target.value=app.activeRound;return;}
       app.activeRound=e.target.value;
       app.live=app.liveByRound.get(app.activeRound);
       if(app.mode==='demo'&&!app.demos.has(app.activeRound))app.demos.set(app.activeRound,makeDemo(app.live));
@@ -1220,7 +1236,7 @@
     $('party-plus').addEventListener('click',()=>adjustParty(1));
     $('allergy-status').addEventListener('change',e=>{$('allergy-note').disabled=e.target.value!=='yes';});
     $('table-form').addEventListener('submit',saveTable);
-    $('seat-all').addEventListener('click',()=>queueBoardAction(seatAll));
+    $('seat-all').addEventListener('click',seatAll);
     $('table-undo').addEventListener('click',undoCourse);
     $('table-clear').addEventListener('click',clearTable);
     $('course-add').addEventListener('click',()=>{
@@ -1269,7 +1285,7 @@
   }
   $('update-check').addEventListener('click',checkForUpdate);
   $('update-apply').addEventListener('click',()=>{
-    if(app.busy){toast('데이터 저장이 끝난 다음 업데이트하세요.',true);return;}
+    if(app.busy||app.pendingTables.size){toast('데이터 저장이 끝난 다음 업데이트하세요.',true);return;}
     const openDialog=['table-dialog','settings-dialog','timetable-dialog'].some(id=>$(id).open);
     if(openDialog && !window.confirm('편집 중인 내용이 있다면 먼저 저장하세요. 새 화면을 불러올까요?'))return;
     window.location.reload();

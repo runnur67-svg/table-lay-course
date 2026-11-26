@@ -251,6 +251,28 @@ async function testV5(){
   assert.equal(table().party_size,3);
   assert.equal(table().allergy_note,'갑각류');
   assert.equal(table().step,1);
+
+  const cardFor=number=>elements['table-row-bottom'].children[5-number];
+  const buttonFor=number=>cardFor(number).querySelector('.serve-action');
+  for(const number of [2,3]){
+    await buttonFor(number).click();
+    await save();
+  }
+  const first=buttonFor(1),second=buttonFor(2),third=buttonFor(3);
+  const untouchedHeader=cardFor(3).querySelector('.card-header');
+  const serveFirst=first.click();
+  const repeatedTap=first.click();
+  const seatSecond=second.click();
+  assert.equal(cardFor(3).querySelector('.card-header'),untouchedHeader);
+  const seatThird=third.click();
+  await Promise.all([serveFirst,repeatedTap,seatSecond,seatThird]);
+  assert.equal(table().step,2,'two taps for the same visible course advance once');
+  for(const [number,button] of [[1,first],[2,second],[3,third]]){
+    assert.equal(buttonFor(number),button,'the original touch target survives a save');
+  }
+  assert.equal(round().tables[1].seated,true);
+  assert.equal(round().tables[2].seated,true);
+  console.log('PASS: rapid taps on three tables save in order without skipping courses');
   console.log('PASS: v5 reservation names, badge, seating, course, IndexedDB, and JSON compatibility');
 }
 (v5?testV5():main()).catch(e=>{console.error('FAIL',e);process.exit(1)});

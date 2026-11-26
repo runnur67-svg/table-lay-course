@@ -52,6 +52,7 @@
     editingTable: 1,
     editParty: 2,
     busy: false,
+    boardActions: [],
     flashedTable: null,
     prevStatus: new Map(),
     toastTimer: null,
@@ -308,13 +309,33 @@
     if(t.step>=list.length)return '전체 코스 완료';
     return list[t.step].name;
   }
-  function makeTableCard(t){
-    const state=urgency(t);
-    const article=create('article','table-card');article.dataset.state=state;article.dataset.table=String(t.number);
-    const main=create('button','card-main');main.type='button';main.setAttribute('aria-label',`T${pad(t.number)} 고객·주문 설정`);
+  function makeTableCard(number){
+    const article=create('article','table-card');
+    article.dataset.table=String(number);
+    const main=create('button','card-main');
+    main.type='button';
+    main.addEventListener('click',()=>openTable(number));
+    const foot=create('div','card-footer');
+    const serve=create('button','serve-action');
+    serve.type='button';
+    serve.addEventListener('click',()=>{
+      const phase=serve.dataset.phase;
+      if(phase==='register'){openTable(number);return;}
+      return queueBoardAction(()=>serveCourse(number,phase));
+    });
+    foot.append(serve);
+    article.append(main,foot);
+    return article;
+  }
+  function tablePhase(t){
+    return !t.assigned?'register':!t.seated?'seat':!t.started_at?'start':`${t.started_at}:${t.step}`;
+  }
+  function renderTableCard(article,t){
+    article.dataset.state=urgency(t);
+    const main=article.querySelector('.card-main');
     const showReservationName=t.assigned&&t.step===0&&t.reservation_name;
-    if(showReservationName)main.setAttribute('aria-label',`T${pad(t.number)} ${t.reservation_name} 고객·주문 설정`);
-    main.addEventListener('click',()=>openTable(t.number));
+    main.setAttribute('aria-label',showReservationName?
+      `T${pad(t.number)} ${t.reservation_name} 고객·주문 설정`:`T${pad(t.number)} 고객·주문 설정`);
     const header=create('div','card-header');
     header.append(create('strong','table-number',pad(t.number)));
     if(showReservationName){
@@ -347,21 +368,37 @@
     snapshot().round.courses.forEach((_,i)=>{
       const dot=create('i',i<t.step&&t.started_at?'completed':i===t.step&&t.started_at?'current':'');track.append(dot);
     });
-    main.append(header,allergy,next,extras,counter,track);
-    const foot=create('div','card-footer');
+    main.replaceChildren(header,allergy,next,extras,counter,track);
     const label=!t.assigned?'예약 등록':!t.seated?'착석 완료':!t.started_at?'코스 시작':t.step>=courseCount()?'전체 완료':'서빙 완료';
-    const serve=create('button','serve-action',label);serve.type='button';serve.disabled=t.assigned&&t.step>=courseCount();
-    serve.addEventListener('click',()=>t.assigned?serveCourse(t.number):openTable(t.number));
-    foot.append(serve);article.append(main,foot);return article;
+    const serve=article.querySelector('.serve-action');
+    if(serve.textContent!==label)serve.textContent=label;
+    serve.disabled=t.assigned&&t.step>=courseCount();
+    serve.dataset.phase=tablePhase(t);
   }
+  const cardContents=new WeakMap();
   function renderTables() {
     const data = snapshot();
     if (!data) return;
     const upper = $('table-row-top'), lower = $('table-row-bottom');
-    upper.replaceChildren(); lower.replaceChildren();
+    if(!upper.children.length){
+      upper.append(...[10,9,8,7,6].map(makeTableCard));
+      lower.append(...[5,4,3,2,1].map(makeTableCard));
+    }
     const lookup = new Map(data.tables.map((t) => [t.number, t]));
-    [10,9,8,7,6].forEach((n) => upper.append(makeTableCard(lookup.get(n))));
-    [5,4,3,2,1].forEach((n) => lower.append(makeTableCard(lookup.get(n))));
+    const schedule=JSON.stringify([data.round.id,data.round.planned_start,data.round.courses]);
+    for(const card of [...upper.children,...lower.children]){
+      const table=lookup.get(Number(card.dataset.table));
+      const contents=schedule+JSON.stringify(table);
+      if(cardContents.get(card)!==contents){
+        renderTableCard(card,table);
+        cardContents.set(card,contents);
+      }else{
+        card.dataset.state=urgency(table);
+        const counter=card.querySelector('.table-time');
+        const remaining=countText(table);
+        if(counter.textContent!==remaining)counter.textContent=remaining;
+      }
+    }
     if (app.flashedTable) {
       const card = document.querySelector(`.table-card[data-table="${app.flashedTable}"]`);
       if (card) {
@@ -521,6 +558,7 @@
       app.busy=false;
       if(app.remoteQueued){const incoming=app.remoteQueued;app.remoteQueued=null;applyRemote(incoming).catch(()=>{});}
       updateStatus();
+      drainBoardActions().catch(syncFailure);
     }
   }
 
@@ -538,7 +576,11 @@
       if(app.mode==='live')renderBoard();
       updateStatus();
     }catch(e){app.syncIssue=e.message;updateStatus();toast('클라우드 데이터 오류: '+e.message,true);}
-    finally{app.remoteApplying=false;if(app.remoteQueued){const latest=app.remoteQueued;app.remoteQueued=null;applyRemote(latest).catch(syncFailure);}}
+    finally{
+      app.remoteApplying=false;
+      if(app.remoteQueued){const latest=app.remoteQueued;app.remoteQueued=null;applyRemote(latest).catch(syncFailure);}
+      drainBoardActions().catch(syncFailure);
+    }
   }
   async function refreshRemoteAfterConflict(){
     if(!app.syncActive)return;
@@ -622,12 +664,28 @@
     $('sync-decisions').hidden=true;$('sync-uid').hidden=true;
     syncMessage('연동 해제됨 · 이 기기에만 저장');updateStatus();
   }
-  async function serveCourse(tableNumber) {
+  function queueBoardAction(run){
+    const round=app.activeRound, mode=app.mode;
+    if(!app.busy&&!app.remoteApplying)return run();
+    return new Promise(resolve=>{
+      app.boardActions.push(async ()=>{
+        try{
+          if(app.activeRound===round&&app.mode===mode)await run();
+        }finally{resolve();}
+      });
+    });
+  }
+
+  async function drainBoardActions(){
+    while(!app.busy&&!app.remoteApplying&&app.boardActions.length){
+      await app.boardActions.shift()();
+    }
+  }
+
+  async function serveCourse(tableNumber,phase) {
     const t=snapshot()?.tables.find(x=>x.number===tableNumber);
-    if (!t) return;
-    if (!t.assigned) {openTable(tableNumber); return;}
-    if (t.step>=courseCount()) return;
-    const step=t.step;
+    // Repeated taps for the same visible step must never advance an extra course.
+    if (!t?.assigned||tablePhase(t)!==phase||t.step>=courseCount()) return;
     app.flashedTable=tableNumber;
     const result=await mutate(null,null,()=>{
       if(!t.seated)t.seated=true;
@@ -1115,7 +1173,7 @@
       $('settings-dialog').close();
       toast('복원 완료: 7개 회차의 설정과 진행 상태를 복구했습니다.');
     }catch(err){toast('복원 실패: '+err.message,true);}
-    finally{app.busy=false;updateStatus();}
+    finally{app.busy=false;updateStatus();drainBoardActions().catch(syncFailure);}
   }
   function bindEvents(){
     $('sync-open').addEventListener('click',()=>{if(app.mode==='demo'){toast('실제 운영 모드에서 연동을 설정하세요.',true);return;}$('sync-dialog').showModal();});
@@ -1162,7 +1220,7 @@
     $('party-plus').addEventListener('click',()=>adjustParty(1));
     $('allergy-status').addEventListener('change',e=>{$('allergy-note').disabled=e.target.value!=='yes';});
     $('table-form').addEventListener('submit',saveTable);
-    $('seat-all').addEventListener('click',seatAll);
+    $('seat-all').addEventListener('click',()=>queueBoardAction(seatAll));
     $('table-undo').addEventListener('click',undoCourse);
     $('table-clear').addEventListener('click',clearTable);
     $('course-add').addEventListener('click',()=>{

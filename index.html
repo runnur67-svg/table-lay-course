@@ -108,6 +108,10 @@
     <div class="modal-header"><div><span class="modal-eyebrow">GUEST DETAILS</span><h2 id="table-modal-title">TABLE 01</h2></div><button type="button" class="close-btn" data-close="table-dialog" aria-label="닫기">×</button></div>
     <form id="table-form" class="modal-body">
       <label class="registration-row"><input type="checkbox" id="table-assigned" checked><span><strong>이번 회차에 테이블 등록</strong><small>착석 완료와 코스 시작은 각각 별도의 단계입니다.</small></span></label>
+      <div class="reservation-name-field">
+        <label for="reservation-name" class="field-label">예약자 이름</label>
+        <input type="text" id="reservation-name" maxlength="60" autocomplete="off">
+      </div>
       <div class="form-grid">
         <div><label class="field-label">인원수</label><div class="stepper"><button type="button" id="party-minus" aria-label="인원 줄이기">−</button><output id="party-value">2명</output><button type="button" id="party-plus" aria-label="인원 늘리기">+</button></div></div>
         <div><label for="allergy-status" class="field-label">알레르기 확인 상태</label><select id="allergy-status"><option value="unknown">미확인</option><option value="none">없음 확인</option><option value="yes">알레르기 있음</option></select></div>

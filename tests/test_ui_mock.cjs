@@ -1,7 +1,9 @@
 const assert=require('assert');
 const fs=require('fs');const vm=require('vm');
 const html=fs.readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
-const source=fs.readFileSync(require('path').join(__dirname,'..','static','app.js'),'utf8');
+const v5=process.argv.includes('--v5');
+let downloadedBackup;
+const source=fs.readFileSync(require('path').join(__dirname,'..','static',v5?'app-v5.js':'app.js'),'utf8');
 const ids=[...html.matchAll(/\bid="([\w-]+)"/g)].map(x=>x[1]);
 class MockElement {
   constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this._text='';this.className='';this.dataset={};this.style={};this.events={};this.value='';this.checked=false;this.disabled=false;this.hidden=false;this.open=false;this.attributes={};}
@@ -82,7 +84,7 @@ function mockIDB() {
   };
 }
 function launch(){const window={confirm:()=>true,addEventListener(){},location:{href:'http://localhost:8765/'}};
-  const fakeIDB=mockIDB();window.indexedDB=fakeIDB;const ctx=vm.createContext({window,document:doc,navigator:{onLine:true,storage:{persist:async()=>true}},indexedDB:fakeIDB,Intl,Date,JSON,Object,Map,Set,String,Number,Array,RegExp,Error,Promise,Math,console,setTimeout,clearTimeout,setInterval:()=>0,Blob,URL:{createObjectURL:()=> 'blob:abc',revokeObjectURL:()=>{}}});
+  const fakeIDB=mockIDB();window.indexedDB=fakeIDB;const ctx=vm.createContext({window,document:doc,navigator:{onLine:true,storage:{persist:async()=>true}},indexedDB:fakeIDB,Intl,Date,JSON,Object,Map,Set,String,Number,Array,RegExp,Error,Promise,Math,console,setTimeout,clearTimeout,setInterval:()=>0,Blob,URL:{createObjectURL:blob=>{downloadedBackup=blob;return 'blob:abc'},revokeObjectURL:()=>{}}});
   vm.runInContext(source,ctx);return ctx;}
 async function sleep(t=20){await new Promise(r=>setTimeout(r,t))}
 async function main(){launch();await sleep(80);
@@ -168,4 +170,83 @@ async function main(){launch();await sleep(80);
   // Reload the same JS VM through a fresh fake DOM test would require separate elements; direct DB state demonstrates actual persisted record.
   console.log('ALL MOCK UI TESTS PASSED');
 }
-main().catch(e=>{console.error('FAIL',e);process.exit(1)});
+async function testV5(){
+  launch();await sleep(80);
+  const round=()=>globalStore.value.rounds['24-l1'];
+  const table=()=>round().tables[0];
+  const card=()=>elements['table-row-bottom'].children[4];
+  const open=()=>card().querySelector('.card-main').click();
+  const save=()=>elements['table-form'].fire('submit');
+  const action=()=>card().querySelector('.serve-action').click();
+  const displayedName=()=>card().querySelector('.table-reservation-name')?.textContent;
+  const restore=payload=>elements['restore-file'].fire('change',{target:{files:[{
+    name:'backup.json',size:payload.length,text:async()=>payload
+  }],value:''}});
+  assert.equal(elements.app.hidden,false);
+  assert.equal(elements['table-row-top'].children.length,5);
+  assert.equal(elements['table-row-bottom'].children.length,5);
+  assert.equal(Object.keys(globalStore.value.rounds).length,7);
+
+  // Simulate an existing v5 IndexedDB record with no reservation name field.
+  delete table().reservation_name;
+  launch();await sleep(40);
+  await open();
+  assert.equal(elements['reservation-name'].value,'');
+  elements['reservation-name'].value='  김테이블  ';
+  elements['allergy-status'].value='yes';
+  elements['allergy-note'].value='갑각류';
+  await save();
+  assert.equal(displayedName(),'김테이블');
+  assert.equal(card().querySelector('.table-party').className,'table-party');
+  assert.equal(card().querySelector('.serve-action').textContent,'착석 완료');
+  assert.equal(table().allergy_note,'갑각류');
+
+  await open();
+  assert.equal(elements['reservation-name'].value,'김테이블');
+  elements['reservation-name'].value='이테이블';
+  await elements['party-plus'].click();
+  await save();
+  assert.equal(displayedName(),'이테이블');
+  assert(card().querySelector('.table-party').classList.contains('table-party-three'));
+
+  await action();
+  assert.equal(table().seated,true);
+  assert.equal(table().started_at,null);
+  assert.equal(displayedName(),'이테이블');
+  await action();
+  assert(table().started_at>0);
+  assert.equal(elements['quantity-grand'].textContent,'3개');
+  await action();
+  assert.equal(table().step,1);
+  assert.equal(displayedName(),'이테이블');
+
+  launch();await sleep(40);
+  assert.equal(displayedName(),'이테이블');
+  await elements['settings-open'].click();
+  await elements['backup-button'].click();
+  const payload=await downloadedBackup.text();
+  assert.equal(JSON.parse(payload).data.rounds['24-l1'].tables[0].reservation_name,'이테이블');
+
+  await open();
+  elements['reservation-name'].value='';
+  await save();
+  assert.equal(displayedName(),'이테이블');
+  await open();
+  await elements['table-clear'].click();
+  assert.equal(table().reservation_name,null);
+  assert.equal(displayedName(),undefined);
+  await restore(payload);
+  assert.equal(displayedName(),'이테이블');
+  assert.equal(table().step,1);
+  assert.equal(table().allergy_note,'갑각류');
+
+  const legacy=JSON.parse(payload);
+  delete legacy.data.rounds['24-l1'].tables[0].reservation_name;
+  await restore(JSON.stringify(legacy));
+  assert.equal(displayedName(),undefined);
+  assert.equal(table().party_size,3);
+  assert.equal(table().allergy_note,'갑각류');
+  assert.equal(table().step,1);
+  console.log('PASS: v5 reservation names, badge, seating, course, IndexedDB, and JSON compatibility');
+}
+(v5?testV5():main()).catch(e=>{console.error('FAIL',e);process.exit(1)});

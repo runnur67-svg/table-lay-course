@@ -93,7 +93,7 @@
         round:{id,title,service_date:serviceDate,meal,planned_start:'',planned_duration:90,revision:0,
           courses:(meal==='lunch'?LUNCH:DINNER).map(([name,minute])=>({name,minute,unit:'person'}))},
         tables:Array.from({length:10},(_,i)=>({
-          number:i+1,assigned:false,party_size:2,allergy_state:'unknown',
+          number:i+1,assigned:false,party_size:2,reservation_name:null,allergy_state:'unknown',
           allergy_note:'',started_at:null,seated:false,step:0,guests:makeGuests(2,meal),updated_at:0
         }))
       };
@@ -176,6 +176,7 @@
           :makeGuests(t.party_size,meal);
         return {
           number:t.number,assigned:t.assigned,party_size:t.party_size,
+          reservation_name:typeof t.reservation_name==='string'?t.reservation_name.trim().slice(0,60)||null:null,
           allergy_state:t.allergy_state,allergy_note:t.allergy_state==='yes'?t.allergy_note:'',
           seated:t.assigned&&(typeof t.seated==='boolean'?t.seated:!!t.started_at),
           started_at:t.started_at,step:t.step,guests,
@@ -311,9 +312,18 @@
     const state=urgency(t);
     const article=create('article','table-card');article.dataset.state=state;article.dataset.table=String(t.number);
     const main=create('button','card-main');main.type='button';main.setAttribute('aria-label',`T${pad(t.number)} 고객·주문 설정`);
+    if(t.assigned&&t.reservation_name)main.setAttribute('aria-label',`T${pad(t.number)} ${t.reservation_name} 고객·주문 설정`);
     main.addEventListener('click',()=>openTable(t.number));
     const header=create('div','card-header');
-    header.append(create('strong','table-number',pad(t.number)),create('span','table-party',t.assigned?`${t.party_size}인`:'미등록'));
+    header.append(create('strong','table-number',pad(t.number)));
+    if(t.assigned&&t.reservation_name){
+      const name=create('span','table-reservation-name',t.reservation_name);
+      name.title=t.reservation_name;
+      header.append(name);
+    }
+    const party=create('span','table-party',t.assigned?`${t.party_size}인`:'미등록');
+    if(t.assigned&&t.party_size===3)party.classList.add('table-party-three');
+    header.append(party);
     const allergy=create('div','table-allergy-slot');
     const warning=allergen(t);
     if(warning)allergy.append(create('span','table-allergy '+t.allergy_state,warning));
@@ -671,6 +681,7 @@
     $('party-value').textContent=`${app.editParty}명`;
     $('party-minus').disabled=app.editParty<=1;
     $('party-plus').disabled=app.editParty>=12;
+    $('reservation-name').value=t.reservation_name||'';
     $('allergy-status').value=t.allergy_state;
     $('allergy-note').value=t.allergy_note;
     $('allergy-note').disabled=t.allergy_state!=='yes';
@@ -698,6 +709,7 @@
     if (!t) return;
     const details={
       party_size:app.editParty,assigned:$('table-assigned').checked,
+      reservation_name:$('reservation-name').value.trim().slice(0,60)||t.reservation_name||null,
       allergy_state:$('allergy-status').value,
       allergy_note:$('allergy-note').value.trim(),guests:JSON.parse(JSON.stringify(app.editGuests))
     };
@@ -724,10 +736,10 @@
   }
   async function clearTable() {
     const number=app.editingTable;
-    if (!window.confirm(`T${pad(number)}의 예약 인원, 알레르기 및 서빙 기록을 모두 비울까요?`))return;
+    if (!window.confirm(`T${pad(number)}의 예약자 이름, 인원, 알레르기 및 서빙 기록을 모두 비울까요?`))return;
     const t=snapshot()?.tables.find(x=>x.number===number);
     const result=await mutate(null,null,()=>{
-      Object.assign(t,{assigned:false,party_size:2,allergy_state:'unknown',allergy_note:'',started_at:null,seated:false,step:0,guests:makeGuests(2,snapshot().round.meal),updated_at:Date.now()/1000});
+      Object.assign(t,{assigned:false,party_size:2,reservation_name:null,allergy_state:'unknown',allergy_note:'',started_at:null,seated:false,step:0,guests:makeGuests(2,snapshot().round.meal),updated_at:Date.now()/1000});
     });
     if (result) {$('table-dialog').close();toast(`T${pad(number)} 테이블을 비웠습니다.`);}
   }
@@ -1039,7 +1051,7 @@
     }
     if(!window.confirm(`${app.live.round.title}의 10개 테이블 고객 정보와 서빙 기록을 모두 지울까요? 백업하지 않았다면 복구할 수 없습니다.`))return;
     const result=await mutate(null,null,()=>{
-      app.live.tables=Array.from({length:10},(_,i)=>({number:i+1,assigned:false,party_size:2,allergy_state:'unknown',allergy_note:'',started_at:null,seated:false,step:0,guests:makeGuests(2,app.live.round.meal),updated_at:Date.now()/1000}));
+      app.live.tables=Array.from({length:10},(_,i)=>({number:i+1,assigned:false,party_size:2,reservation_name:null,allergy_state:'unknown',allergy_note:'',started_at:null,seated:false,step:0,guests:makeGuests(2,app.live.round.meal),updated_at:Date.now()/1000}));
     });
     if(result){$('settings-dialog').close();toast('현재 회차가 초기화되었습니다.');}
   }

@@ -337,3 +337,8 @@ textarea.sync-input{font-family:ui-monospace,monospace;font-size:12px;resize:ver
 .sync-uid{padding:8px 10px;background:#edf1e9;border-radius:8px;font-size:12px;overflow-wrap:anywhere}
 .sync-decisions{border-top:1px solid #dce0d9;padding-top:12px;display:grid;gap:12px}
 @media(max-width:580px){.sync-grid{grid-template-columns:1fr}}
+
+.reservation-name-field{display:grid;gap:7px}
+.table-party-three{background:#bd4e0b;border-color:#bd4e0b;color:#fff;font-weight:850}
+.card-header > .table-number,.card-header > .table-party{flex:none}
+.table-reservation-name{min-width:0;flex:1;font-size:clamp(11px,1.1vw,15px);font-weight:800;line-height:1.2;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

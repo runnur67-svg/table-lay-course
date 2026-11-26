@@ -312,11 +312,12 @@
     const state=urgency(t);
     const article=create('article','table-card');article.dataset.state=state;article.dataset.table=String(t.number);
     const main=create('button','card-main');main.type='button';main.setAttribute('aria-label',`T${pad(t.number)} 고객·주문 설정`);
-    if(t.assigned&&t.reservation_name)main.setAttribute('aria-label',`T${pad(t.number)} ${t.reservation_name} 고객·주문 설정`);
+    const showReservationName=t.assigned&&t.step===0&&t.reservation_name;
+    if(showReservationName)main.setAttribute('aria-label',`T${pad(t.number)} ${t.reservation_name} 고객·주문 설정`);
     main.addEventListener('click',()=>openTable(t.number));
     const header=create('div','card-header');
     header.append(create('strong','table-number',pad(t.number)));
-    if(t.assigned&&t.reservation_name){
+    if(showReservationName){
       const name=create('span','table-reservation-name',t.reservation_name);
       name.title=t.reservation_name;
       header.append(name);

@@ -215,28 +215,32 @@ async function testV5(){
   assert.equal(displayedName(),'이테이블');
   await action();
   assert(table().started_at>0);
+  assert.equal(displayedName(),'이테이블');
   assert.equal(elements['quantity-grand'].textContent,'3개');
   await action();
   assert.equal(table().step,1);
-  assert.equal(displayedName(),'이테이블');
+  assert.equal(displayedName(),undefined);
 
   launch();await sleep(40);
-  assert.equal(displayedName(),'이테이블');
+  assert.equal(displayedName(),undefined);
   await elements['settings-open'].click();
   await elements['backup-button'].click();
   const payload=await downloadedBackup.text();
   assert.equal(JSON.parse(payload).data.rounds['24-l1'].tables[0].reservation_name,'이테이블');
 
   await open();
+  assert.equal(elements['reservation-name'].value,'이테이블');
   elements['reservation-name'].value='';
   await save();
-  assert.equal(displayedName(),'이테이블');
+  assert.equal(table().reservation_name,'이테이블');
+  assert.equal(displayedName(),undefined);
   await open();
   await elements['table-clear'].click();
   assert.equal(table().reservation_name,null);
   assert.equal(displayedName(),undefined);
   await restore(payload);
-  assert.equal(displayedName(),'이테이블');
+  assert.equal(table().reservation_name,'이테이블');
+  assert.equal(displayedName(),undefined);
   assert.equal(table().step,1);
   assert.equal(table().allergy_note,'갑각류');
 
